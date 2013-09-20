@@ -293,38 +293,38 @@ static int shift_log(dlog_t *lp, struct timeval *now)
 
 static ssize_t xwrite(int fd, const void *buf, size_t len)
 {
-	ssize_t nr;
-	while (1)
+    ssize_t nr;
+    while (1)
     {
-		nr = write(fd, buf, len);
-		if ((nr < 0) && (errno == EAGAIN || errno == EINTR))
-			continue;
+        nr = write(fd, buf, len);
+        if ((nr < 0) && (errno == EAGAIN || errno == EINTR))
+            continue;
 
-		return nr;
-	}
+        return nr;
+    }
 }
 
 static ssize_t write_in_full(int fd, const void *buf, size_t count)
 {
-	const char *p = buf;
-	ssize_t total = 0;
+    const char *p = buf;
+    ssize_t total = 0;
 
-	while (count > 0)
+    while (count > 0)
     {
-		ssize_t written = xwrite(fd, p, count);
-		if (written < 0)
-			return -1;
-		if (!written)
+        ssize_t written = xwrite(fd, p, count);
+        if (written < 0)
+            return -1;
+        if (!written)
         {
-			errno = ENOSPC;
-			return -1;
-		}
-		count -= written;
-		p += written;
-		total += written;
-	}
+            errno = ENOSPC;
+            return -1;
+        }
+        count -= written;
+        p += written;
+        total += written;
+    }
 
-	return total;
+    return total;
 }
 
 static int flush_log(dlog_t *lp, struct timeval *now)
