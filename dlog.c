@@ -479,7 +479,7 @@ void dlog_check(dlog_t *lp, struct timeval *tv)
         lp = lp_list_head;
         while (lp)
         {
-            dlog_check(lp, tv);
+            _dlog_check(lp, tv);
             lp = (dlog_t *)lp->next;
         }
     }
