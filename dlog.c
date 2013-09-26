@@ -337,7 +337,7 @@ static ssize_t write_in_full(int fd, const void *buf, size_t count)
 
 static int flush_log(dlog_t *lp, struct timeval *now)
 {
-    if (!lp->far_log)
+    if (!lp->remote_log)
     {
         log_name(lp, now);
         shift_log(lp, now);
@@ -348,7 +348,7 @@ static int flush_log(dlog_t *lp, struct timeval *now)
 
     if (lp->w_len)
     {
-        if (lp->far_log)
+        if (lp->remote_log)
         {
             /* lasz init, because dlog_init may call befor daemon */
             if (lp->sockfd == 0)
@@ -410,7 +410,7 @@ static void *dlog_free(dlog_t *lp)
     return NULL;
 }
 
-static int dlog_is_far_log(char *base_name, struct sockaddr_in *addr)
+static int dlog_is_remote_log(char *base_name, struct sockaddr_in *addr)
 {
     if (strchr(base_name, ':'))
     {
@@ -449,29 +449,29 @@ dlog_t *dlog_init(char *base_name, int flag,
     int no_cache = flag & DLOG_NO_CACHE;
     flag &= ~DLOG_NO_CACHE;
 
-    int far_log = flag & DLOG_FAR_LOG;
-    flag &= ~DLOG_FAR_LOG;
+    int remote_log = flag & DLOG_REMOTE_LOG;
+    flag &= ~DLOG_REMOTE_LOG;
 
     dlog_t *lp = calloc(1, sizeof(dlog_t));
     if (lp == NULL)
         return NULL;
 
-    if (far_log)
+    if (remote_log)
     {
         lp->addr = *((struct sockaddr_in *)base_name);
     }
     else
     {
-        if ((far_log = dlog_is_far_log(base_name, &lp->addr)) < 0)
+        if ((remote_log = dlog_is_remote_log(base_name, &lp->addr)) < 0)
             return dlog_free(lp);
-        if (far_log == 0)
+        if (remote_log == 0)
         {
             if ((lp->base_name = strdup(base_name)) == NULL)
                 return dlog_free(lp);
         }
     }
 
-    if (!far_log && (flag < DLOG_SHIFT_BY_SIZE || flag > DLOG_SHIFT_BY_DAY))
+    if (!remote_log && (flag < DLOG_SHIFT_BY_SIZE || flag > DLOG_SHIFT_BY_DAY))
         return NULL;
 
     lp->name = malloc(strlen(base_name) + 30);
@@ -486,7 +486,7 @@ dlog_t *dlog_init(char *base_name, int flag,
     lp->max_size   = max_size;
     lp->log_num    = log_num;
     lp->keep_time  = keep_time;
-    lp->far_log    = far_log;
+    lp->remote_log    = remote_log;
 
     struct timeval now;
     gettimeofday(&now, NULL);
@@ -500,7 +500,7 @@ dlog_t *dlog_init(char *base_name, int flag,
         init_flag = 1;
     }
     
-    if (!lp->far_log)
+    if (!lp->remote_log)
     {
         int fd = open(log_name(lp, &now), O_WRONLY | O_APPEND | O_CREAT, 0664);
         if (fd < 0)
@@ -602,7 +602,7 @@ static int _dlog(dlog_t *lp, char *fmt, va_list ap)
     }
     else if (ret >= len)
     {
-        if (lp->far_log)
+        if (lp->remote_log)
         {
             /* drop the remaining */
             n += len - 1;
@@ -656,7 +656,7 @@ int dlog(dlog_t *lp, char *fmt, ...)
 # ifdef DLOG_SERVER
 int dlog_server(dlog_t *lp, char *buf, size_t size, struct sockaddr_in *addr)
 {
-    if (lp->far_log)
+    if (lp->remote_log)
         return -1;
 
     struct timeval now;

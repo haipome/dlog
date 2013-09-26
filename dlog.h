@@ -38,7 +38,7 @@ typedef struct
     int                 log_num;
     int                 keep_time;
     time_t              last_unlink;
-    int                 far_log;
+    int                 remote_log;
     int                 sockfd;
     struct sockaddr_in  addr;
     pthread_mutex_t     lock;
@@ -58,10 +58,10 @@ typedef struct
 # define DLOG_NO_CACHE 0x20000
 
 /*
- * use DLOG_FAR_LOG with flag, and set base_name as a pointer to
- * struct sockaddr_in, log will be send to far addr.
+ * use DLOG_REMOTE_LOG with flag, and set base_name as a pointer to
+ * struct sockaddr_in, log will be send to remote addr.
  */
-# define DLOG_FAR_LOG 0x40000
+# define DLOG_REMOTE_LOG 0x40000
 
 /*
  * example:

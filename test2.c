@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
         error(1, errno, "ip: %s in invalid", argv[1]);
     log_addr.sin_port = htons((unsigned short)atoi(argv[2]));
 
-    dlog_t *lp = dlog_init((char *)&log_addr, DLOG_FAR_LOG, 0, 0, 0);
+    dlog_t *lp = dlog_init((char *)&log_addr, DLOG_REMOTE_LOG, 0, 0, 0);
     if (lp == NULL)
         error(1, errno, "dlog_init fail");
 
