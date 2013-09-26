@@ -1,6 +1,6 @@
 /*
- * Description: a log lib with cache
- *     History: yang@haipo.me, 2013/05/20, created
+ * Description: a log lib with cache, writen by damon
+ *     History: damonyang@tencent.com, 2013/05/20, created
  */
 
 # ifndef _DLOG_H_
@@ -8,9 +8,11 @@
 
 # define __DLOG__ 1
 
+# include <stddef.h>
+# include <pthread.h>
 # include <time.h>
 # include <sys/time.h>
-# include <stddef.h>
+# include <netinet/in.h>
 
 enum
 {
@@ -22,33 +24,44 @@ enum
 
 typedef struct
 {
-    char            *base_name;
-    char            *name;
-    struct timeval  last_write;
-    char            *buf;
-    size_t          buf_len;
-    size_t          w_len;
-    int             shift_type;
-    int             use_fork;
-    int             no_cache;
-    size_t          max_size;
-    int             log_num;
-    int             keep_time;
-    time_t          last_unlink;
-    void            *next;
+    char                *base_name;
+    char                *name;
+    struct timeval      last_write;
+    char                *buf;
+    size_t              buf_len;
+    size_t              w_len;
+    int                 shift_type;
+    time_t              last_shift;
+    int                 use_fork;
+    int                 no_cache;
+    size_t              max_size;
+    int                 log_num;
+    int                 keep_time;
+    time_t              last_unlink;
+    int                 far_log;
+    int                 sockfd;
+    struct sockaddr_in  addr;
+    pthread_mutex_t     lock;
+    void                *next;
 } dlog_t;
 
 
 /*
- * use DLOG_USE_FORK with shift_type, when remove expire log file or
+ * use DLOG_USE_FORK with flag, when remove expire log file or
  * shift log file, fork a new process to do those job.
  */
 # define DLOG_USE_FORK 0x10000
 
 /*
- * use DLOG_NO_CACHE with shift_type, log will write to file immediately.
+ * use DLOG_NO_CACHE with flag, log will write to file immediately.
  */
 # define DLOG_NO_CACHE 0x20000
+
+/*
+ * use DLOG_FAR_LOG with flag, and set base_name as a pointer to
+ * struct sockaddr_in, log will be send to far addr.
+ */
+# define DLOG_FAR_LOG 0x40000
 
 /*
  * example:
@@ -58,7 +71,7 @@ typedef struct
  *
  * fail return NULL.
  */
-dlog_t *dlog_init(char *base_name, int shift_type,
+dlog_t *dlog_init(char *base_name, int flag,
         size_t max_size, int log_num, int keep_time);
 
 int dlog(dlog_t *lp, char *fmt, ...) __attribute__ ((format(printf, 2, 3)));
@@ -67,6 +80,10 @@ int dlog(dlog_t *lp, char *fmt, ...) __attribute__ ((format(printf, 2, 3)));
 void dlog_check(dlog_t *lp, struct timeval *tv);
 
 int dlog_fini(dlog_t *lp);
+
+# ifdef DLOG_SERVER
+int dlog_server(dlog_t *lp, char *buf, size_t size, struct sockaddr_in *addr);
+# endif
 
 /*
  * default_dlog and default_dlog_flag is use for macros below.
