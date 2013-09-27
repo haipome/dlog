@@ -393,7 +393,7 @@ end_lable:
 # endif
     lp->last_write = *now;
 
-    return 0;
+    return ret_val;
 }
 
 static void dlog_atexit()
