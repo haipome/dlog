@@ -92,7 +92,7 @@ static char *log_suffix(int type, time_t sec, int i)
     return str;
 }
 
-static uint64_t timeval_diff(struct timeval *old, struct timeval *new)
+static inline uint64_t timeval_diff(struct timeval *old, struct timeval *new)
 {
     return (new->tv_sec - old->tv_sec) * (1000 * 1000) -
         (old->tv_usec - new->tv_usec);
@@ -209,7 +209,6 @@ static int _shift_log(dlog_t *lp, struct timeval *now)
     if (lp->log_num == 1)
     {
         unlink(lp->name);
-
         return 0;
     }
 
@@ -337,54 +336,63 @@ static ssize_t write_in_full(int fd, const void *buf, size_t count)
 
 static int flush_log(dlog_t *lp, struct timeval *now)
 {
-    if (!lp->remote_log)
+    if (lp->w_len == 0)
+        return 0;
+
+    ssize_t n = 0;
+    int ret_val = 0;
+
+    if (lp->remote_log)
+    {
+        /* lasz init, because dlog_init may call befor daemon */
+        if (lp->sockfd == 0)
+        {
+            int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+            if (sockfd < 0)
+            {
+                ret_val = -1;
+                goto end_lable;
+            }
+            lp->sockfd = sockfd;
+        }
+
+        n = sendto(lp->sockfd, lp->buf, lp->w_len, 0, (struct sockaddr *)&lp->addr, sizeof(lp->addr));
+        if (n < 0)
+        {
+            if (errno == EBADF)
+                lp->sockfd = 0;
+            ret_val = -1;
+            goto end_lable;
+        }
+    }
+    else
     {
         log_name(lp, now);
         shift_log(lp, now);
         unlink_expire(lp, now);
+
+        int fd = open(lp->name, O_WRONLY | O_APPEND | O_CREAT, 0664);
+        if (fd < 0)
+        {
+            ret_val = -1;
+            goto end_lable;
+        }
+        n = write_in_full(fd, lp->buf, lp->w_len);
+        close(fd);
+        if (n < 0)
+        {
+            ret_val = -1;
+            goto end_lable;
+        }
     }
 
-    ssize_t n = 0;
-
-    if (lp->w_len)
-    {
-        if (lp->remote_log)
-        {
-            /* lasz init, because dlog_init may call befor daemon */
-            if (lp->sockfd == 0)
-            {
-                int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-                if (sockfd < 0)
-                    return -1;
-                lp->sockfd = sockfd;
-            }
-
-            n = sendto(lp->sockfd, lp->buf, lp->w_len, 0, (struct sockaddr *)&lp->addr, sizeof(lp->addr));
-            if (n < 0)
-            {
-                if (errno == EBADF)
-                    lp->sockfd = 0;
-                return -1;
-            }
-        }
-        else
-        {
-            int fd = open(lp->name, O_WRONLY | O_APPEND | O_CREAT, 0664);
-            if (fd < 0)
-                return -1;
-            n = write_in_full(fd, lp->buf, lp->w_len);
-            close(fd);
-            if (n < 0)
-                return -1;
-        }
-
-        lp->w_len = 0;
+end_lable:
+    lp->w_len = 0;
 # ifdef DEBUG
-        ++write_times;
+    ++write_times;
 # endif
-        lp->last_write = *now;
-    }
-    
+    lp->last_write = *now;
+
     return 0;
 }
 
@@ -410,15 +418,15 @@ static void *dlog_free(dlog_t *lp)
     return NULL;
 }
 
-static int dlog_is_remote_log(char *base_name, struct sockaddr_in *addr)
+static int is_remote_log(char *base_name, struct sockaddr_in *addr)
 {
     if (strchr(base_name, ':'))
     {
         char name[PATH_MAX] = { 0 };
         strncpy(name, base_name, sizeof(name) - 1);
 
-        char *ip = strtok(name, ": \t");
-        char *port = strtok(NULL, ": \t");
+        char *ip = strtok(name, ": \t\n\r");
+        char *port = strtok(NULL, ": \t\n\r");
 
         if (ip == NULL || port == NULL)
             return -1;
@@ -462,7 +470,7 @@ dlog_t *dlog_init(char *base_name, int flag,
     }
     else
     {
-        if ((remote_log = dlog_is_remote_log(base_name, &lp->addr)) < 0)
+        if ((remote_log = is_remote_log(base_name, &lp->addr)) < 0)
             return dlog_free(lp);
         if (remote_log == 0)
         {
@@ -486,7 +494,7 @@ dlog_t *dlog_init(char *base_name, int flag,
     lp->max_size   = max_size;
     lp->log_num    = log_num;
     lp->keep_time  = keep_time;
-    lp->remote_log    = remote_log;
+    lp->remote_log = remote_log;
 
     struct timeval now;
     gettimeofday(&now, NULL);
@@ -523,7 +531,7 @@ dlog_t *dlog_init(char *base_name, int flag,
     return lp;
 }
 
-static void _dlog_check(dlog_t *lp, struct timeval *now)
+static inline void _dlog_check(dlog_t *lp, struct timeval *now)
 {
     if ((timeval_diff(&lp->last_write, now) >= WRITE_INTERVAL_IN_USEC) ||
             (lp->w_len >= WRITE_BUFFER_CHECK_LEN))
@@ -534,6 +542,24 @@ static void _dlog_check(dlog_t *lp, struct timeval *now)
 
 void dlog_check(dlog_t *lp, struct timeval *tv)
 {
+    if (lp)
+    {
+        if (lp->w_len == 0)
+            return;
+    }
+    else
+    {
+        lp = lp_list_head;
+        while (lp)
+        {
+            if (lp->w_len)
+                break;
+            lp = (dlog_t *)lp->next;
+        }
+        if (lp == NULL)
+            return;
+    }
+
     struct timeval now;
 
     if (tv == NULL)
@@ -542,18 +568,19 @@ void dlog_check(dlog_t *lp, struct timeval *tv)
         tv = &now;
     }
 
-    if (lp == NULL)
+    if (lp)
+    {
+        _dlog_check(lp, tv);
+    }
+    else
     {
         lp = lp_list_head;
         while (lp)
         {
-            _dlog_check(lp, tv);
+            if (lp->w_len)
+                _dlog_check(lp, tv);
             lp = (dlog_t *)lp->next;
         }
-    }
-    else
-    {
-        _dlog_check(lp, tv);
     }
 }
 
@@ -711,7 +738,6 @@ int dlog_fini(dlog_t *lp)
             if (_lp->next == lp)
             {
                 _lp->next = lp->next;
-
                 break;
             }
             else
@@ -739,12 +765,10 @@ int dlog_fini(dlog_t *lp)
 static char *strtolower(char *str)
 {
     char *s = str;
-
     while (*s)
     {
         if (*s >= 'A' && *s <= 'Z')
             *s += ('a' - 'A');
-
         ++s;
     }
 
@@ -756,10 +780,13 @@ int dlog_read_flag(char *str)
     if (str == NULL)
         return 0;
 
-    char *s   = strdup(str);
-    int  flag = 0;
+    int flag = 0;
 
-    char *f   = strtok(s, "\r\n\t ,");
+    char *s = strdup(str);
+    if (s == NULL) 
+        return -1;
+
+    char *f = strtok(s, "\r\n\t ,");
     while (f != NULL)
     {
         strtolower(f);
