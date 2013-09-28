@@ -45,7 +45,7 @@ void print_help(void)
     printf("\t-p --port port\n");
     printf("\t-a --addr\n");
     printf("\t-d --daemon\n\n");
-    printf("<damonyang@tencent.com\n");
+    printf("<damonyang@tencent.com>\n");
 }
 
 int running;
