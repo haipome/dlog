@@ -53,9 +53,9 @@ void sig_handle(int signo)
 {
     switch (signo)
     {
-        case SIGQUIT:
-            running = 0;
-            break;
+    case SIGQUIT:
+        running = 0;
+        break;
     }
 }
 
@@ -116,38 +116,38 @@ int main(int argc, char *argv[])
     {
         switch (c)
         {
-            case 'h':
-                print_help();
-                exit(0);
-            case 'b':
-                base_name = strdup(optarg);
-                break;
-            case 't':
-                if ((shift_type = strtotype(optarg)) < 0)
-                    error(1, 0, "invalid shift type");
-                break;
-            case 's':
-                max_size = strtoull(optarg, NULL, 0);
-                break;
-            case 'n':
-                log_num = atoi(optarg);
-                break;
-            case 'k':
-                keep_time = atoi(optarg);
-                break;
-            case 'p':
-                port = atoi(optarg);
-                break;
-            case 'a':
-                log_addr = true;
-                break;
-            case 'd':
-                in_daemon = true;
-                break;
-            case '?':
-                exit(EXIT_FAILURE);
-            default:
-                abort();
+        case 'h':
+            print_help();
+            exit(0);
+        case 'b':
+            base_name = strdup(optarg);
+            break;
+        case 't':
+            if ((shift_type = strtotype(optarg)) < 0)
+                error(1, 0, "invalid shift type");
+            break;
+        case 's':
+            max_size = strtoull(optarg, NULL, 0);
+            break;
+        case 'n':
+            log_num = atoi(optarg);
+            break;
+        case 'k':
+            keep_time = atoi(optarg);
+            break;
+        case 'p':
+            port = atoi(optarg);
+            break;
+        case 'a':
+            log_addr = true;
+            break;
+        case 'd':
+            in_daemon = true;
+            break;
+        case '?':
+            exit(EXIT_FAILURE);
+        default:
+            abort();
         }
     }
 
@@ -194,7 +194,7 @@ int main(int argc, char *argv[])
         {
             struct sockaddr_in client;
             socklen_t len = sizeof(client);
-            
+
             char buf[UINT16_MAX];
             ssize_t n = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&client, &len);
             if (n < 0)

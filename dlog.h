@@ -1,6 +1,6 @@
 /*
  * Description: a log lib with cache, writen by damon
- *     History: damonyang@tencent.com, 2013/05/20, created
+ *     History: yang@haipo.me, 2013/05/20, created
  */
 
 # ifndef _DLOG_H_
@@ -40,6 +40,7 @@ typedef struct
     time_t              last_unlink;
     int                 remote_log;
     int                 sockfd;
+    int                 external_sockfd;
     struct sockaddr_in  addr;
     pthread_mutex_t     lock;
     void                *next;
@@ -74,10 +75,20 @@ typedef struct
 dlog_t *dlog_init(char *base_name, int flag,
         size_t max_size, int log_num, int keep_time);
 
-int dlog(dlog_t *lp, char *fmt, ...) __attribute__ ((format(printf, 2, 3)));
+/* set socket file descriptor when use remote log.
+ * this is optional, if you don't set, dlog will create one.
+ */
+int dlog_set_sockfd(dlog_t *lp, int fd);
 
-/* call dlog_check in main loop, will help write log to file as soon as possible */
+int dlog(dlog_t *lp, char const *fmt, ...) __attribute__ ((format(printf, 2, 3)));
+
+/* check log, help write log to file as soon as possible */
 void dlog_check(dlog_t *lp, struct timeval *tv);
+void dlog_check_all(void);
+
+/* flush log immediately */
+void dlog_flush(dlog_t *lp);
+void dlog_flush_all(void);
 
 int dlog_fini(dlog_t *lp);
 
@@ -85,16 +96,22 @@ int dlog_fini(dlog_t *lp);
 int dlog_server(dlog_t *lp, char *buf, size_t size, struct sockaddr_in *addr);
 # endif
 
+/* return all opened dlog instance number */
+int dlog_opened_num(void);
+
 /*
  * default_dlog and default_dlog_flag is use for macros below.
  * default_dlog_flag is used in bits, you need initialize it like:
  *     default_dlog_flag = DLOG_FATAL | DLOG_ERROR | DLOG_INFO;
  */
-extern dlog_t *default_dlog;
-extern int     default_dlog_flag;
+extern dlog_t   *default_dlog;
+extern int      default_dlog_flag;
 
 /* read flag from string like: error, info, NOTICE  DEBUG */
 int dlog_read_flag(char *str);
+
+void dlog_level_up(void);
+void dlog_level_down(void);
 
 enum
 {
@@ -165,6 +182,8 @@ enum
         loga("[user2]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
     } \
 } while (0)
+
+# define log_level(level, fmt, args...) log_##level(fmt, ##args)
 
 # endif
 

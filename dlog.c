@@ -1,6 +1,6 @@
 /*
  * Description: a log lib with cache, writen by damon
- *     History: damonyang@tencent.com, 2013/05/20, created
+ *     History: yang@haipo.me, 2013/05/20, created
  */
 
 # undef  _FILE_OFFSET_BITS
@@ -10,6 +10,7 @@
 # include <stdint.h>
 # include <string.h>
 # include <stdlib.h>
+# include <stdbool.h>
 # include <stdarg.h>
 # include <fcntl.h>
 # include <time.h>
@@ -26,8 +27,8 @@
 
 # include "dlog.h"
 
-dlog_t *default_dlog = NULL;
-int     default_dlog_flag = 0;
+dlog_t   *default_dlog;
+int      default_dlog_flag;
 
 # define WRITE_INTERVAL_IN_USEC (10 * 1000)     /* 100 ms */
 # define WRITE_BUFFER_CHECK_LEN (32 * 1024)     /* 32 KB */
@@ -62,26 +63,26 @@ static char *log_suffix(int type, time_t sec, int i)
 
     switch (type)
     {
-        case DLOG_SHIFT_BY_MIN:
-            n = snprintf(str, sizeof(str), "_%04d%02d%02d%02d%02d",
-                    t->tm_year + 1900, t->tm_mon + 1,
-                    t->tm_mday, t->tm_hour, t->tm_min);
-            
-            break;
-        case DLOG_SHIFT_BY_HOUR:
-            n = snprintf(str, sizeof(str), "_%04d%02d%02d%02d",
-                    t->tm_year + 1900, t->tm_mon + 1,
-                    t->tm_mday, t->tm_hour);
+    case DLOG_SHIFT_BY_MIN:
+        n = snprintf(str, sizeof(str), "_%04d%02d%02d%02d%02d",
+                t->tm_year + 1900, t->tm_mon + 1,
+                t->tm_mday, t->tm_hour, t->tm_min);
 
-            break;
-        case DLOG_SHIFT_BY_DAY:
-            n = snprintf(str, sizeof(str), "_%04d%02d%02d",
-                    t->tm_year + 1900, t->tm_mon + 1, t->tm_mday);
-            break;
-        default:
-            str[0] = 0;
+        break;
+    case DLOG_SHIFT_BY_HOUR:
+        n = snprintf(str, sizeof(str), "_%04d%02d%02d%02d",
+                t->tm_year + 1900, t->tm_mon + 1,
+                t->tm_mday, t->tm_hour);
 
-            break;
+        break;
+    case DLOG_SHIFT_BY_DAY:
+        n = snprintf(str, sizeof(str), "_%04d%02d%02d",
+                t->tm_year + 1900, t->tm_mon + 1, t->tm_mday);
+        break;
+    default:
+        str[0] = 0;
+
+        break;
     }
 
     if (i)
@@ -98,7 +99,7 @@ static inline uint64_t timeval_diff(struct timeval *old, struct timeval *new)
         (old->tv_usec - new->tv_usec);
 }
 
-static int _unlink_expire(dlog_t *lp, time_t expire_time)
+static int inner_unlink_expire(dlog_t *lp, time_t expire_time)
 {
     char path[PATH_MAX];
     int  num = 0;
@@ -142,30 +143,30 @@ static int unlink_expire(dlog_t *lp, struct timeval *now)
 
     switch (lp->shift_type)
     {
-        case DLOG_SHIFT_BY_MIN:
-            if (now->tv_sec - lp->last_unlink > 60)
-            {
-                expire = 1;
-                expire_time = now->tv_sec - 60 * lp->keep_time;
-            }
+    case DLOG_SHIFT_BY_MIN:
+        if (now->tv_sec - lp->last_unlink > 60)
+        {
+            expire = 1;
+            expire_time = now->tv_sec - 60 * lp->keep_time;
+        }
 
-            break;
-        case DLOG_SHIFT_BY_HOUR:
-            if (now->tv_sec - lp->last_unlink > 3600)
-            {
-                expire = 1;
-                expire_time = now->tv_sec - 3600 * lp->keep_time;
-            }
+        break;
+    case DLOG_SHIFT_BY_HOUR:
+        if (now->tv_sec - lp->last_unlink > 3600)
+        {
+            expire = 1;
+            expire_time = now->tv_sec - 3600 * lp->keep_time;
+        }
 
-            break;
-        case DLOG_SHIFT_BY_DAY:
-            if (now->tv_sec - lp->last_unlink > 86400)
-            {
-                expire = 1;
-                expire_time = now->tv_sec - 86400 * lp->keep_time;
-            }
+        break;
+    case DLOG_SHIFT_BY_DAY:
+        if (now->tv_sec - lp->last_unlink > 86400)
+        {
+            expire = 1;
+            expire_time = now->tv_sec - 86400 * lp->keep_time;
+        }
 
-            break;
+        break;
     }
 
     if (expire)
@@ -179,13 +180,13 @@ static int unlink_expire(dlog_t *lp, struct timeval *now)
         {
             if (fork() == 0)
             {
-                _unlink_expire(lp, expire_time);
+                inner_unlink_expire(lp, expire_time);
                 _exit(0);
             }
         }
         else
         {
-            _unlink_expire(lp, expire_time);
+            inner_unlink_expire(lp, expire_time);
         }
 # ifdef DEBUG
         gettimeofday(&end, NULL);
@@ -204,7 +205,7 @@ static char *log_name(dlog_t *lp, struct timeval *now)
     return lp->name;
 }
 
-static int _shift_log(dlog_t *lp, struct timeval *now)
+static int inner_shift_log(dlog_t *lp, struct timeval *now)
 {
     if (lp->log_num == 1)
     {
@@ -281,13 +282,13 @@ static int shift_log(dlog_t *lp, struct timeval *now)
         {
             if (fork() == 0)
             {
-                _shift_log(lp, now);
+                inner_shift_log(lp, now);
                 _exit(0);
             }
         }
         else
         {
-            _shift_log(lp, now);
+            inner_shift_log(lp, now);
         }
 # ifdef DEBUG
         gettimeofday(&end, NULL);
@@ -345,7 +346,7 @@ static int flush_log(dlog_t *lp, struct timeval *now)
     if (lp->remote_log)
     {
         /* lasz init, because dlog_init may call befor daemon */
-        if (lp->sockfd == 0)
+        if (lp->sockfd < 0)
         {
             int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
             if (sockfd < 0)
@@ -360,7 +361,10 @@ static int flush_log(dlog_t *lp, struct timeval *now)
         if (n < 0)
         {
             if (errno == EBADF)
-                lp->sockfd = 0;
+            {
+                lp->sockfd = -1;
+                lp->external_sockfd = 0;
+            }
             ret_val = -1;
             goto end_lable;
         }
@@ -396,20 +400,24 @@ end_lable:
     return ret_val;
 }
 
-static void dlog_atexit()
+static void dlog_atexit(void)
 {
     dlog_t *lp = lp_list_head;
 
     while (lp)
     {
-        dlog_t *_lp = lp;
+        dlog_t *lq = lp;
         lp = (dlog_t *)lp->next;
-        dlog_fini(_lp);
+        dlog_fini(lq);
     }
 }
 
 static void *dlog_free(dlog_t *lp)
 {
+    if (lp->remote_log && lp->external_sockfd == 0 && lp->sockfd >= 0)
+    {
+        close(lp->sockfd);
+    }
     free(lp->base_name);
     free(lp->name);
     free(lp->buf);
@@ -495,6 +503,7 @@ dlog_t *dlog_init(char *base_name, int flag,
     lp->log_num    = log_num;
     lp->keep_time  = keep_time;
     lp->remote_log = remote_log;
+    lp->sockfd     = -1;
 
     struct timeval now;
     gettimeofday(&now, NULL);
@@ -507,7 +516,7 @@ dlog_t *dlog_init(char *base_name, int flag,
         atexit(dlog_atexit);
         init_flag = 1;
     }
-    
+
     if (!lp->remote_log)
     {
         int fd = open(log_name(lp, &now), O_WRONLY | O_APPEND | O_CREAT, 0664);
@@ -522,16 +531,16 @@ dlog_t *dlog_init(char *base_name, int flag,
     }
     else
     {
-        dlog_t *_lp = lp_list_head;
-        while (_lp->next)
-            _lp = (dlog_t *)_lp->next;
-        _lp->next = (void *)lp;
+        dlog_t *lq = lp_list_head;
+        while (lq->next)
+            lq = (dlog_t *)lq->next;
+        lq->next = (void *)lp;
     }
 
     return lp;
 }
 
-static inline void _dlog_check(dlog_t *lp, struct timeval *now)
+static inline void inner_dlog_check(dlog_t *lp, struct timeval *now)
 {
     if ((timeval_diff(&lp->last_write, now) >= WRITE_INTERVAL_IN_USEC) ||
             (lp->w_len >= WRITE_BUFFER_CHECK_LEN))
@@ -570,7 +579,7 @@ void dlog_check(dlog_t *lp, struct timeval *tv)
 
     if (lp)
     {
-        _dlog_check(lp, tv);
+        inner_dlog_check(lp, tv);
     }
     else
     {
@@ -578,10 +587,15 @@ void dlog_check(dlog_t *lp, struct timeval *tv)
         while (lp)
         {
             if (lp->w_len)
-                _dlog_check(lp, tv);
+                inner_dlog_check(lp, tv);
             lp = (dlog_t *)lp->next;
         }
     }
+}
+
+void dlog_check_all(void)
+{
+    dlog_check(NULL, NULL);
 }
 
 static char *timeval_str(struct timeval *tv)
@@ -596,7 +610,7 @@ static char *timeval_str(struct timeval *tv)
     return str;
 }
 
-static int _dlog(dlog_t *lp, char *fmt, va_list ap) 
+static int inner_dlog(dlog_t *lp, char const *fmt, va_list ap) 
 {
     if (!lp || !fmt)
         return -1;
@@ -662,18 +676,18 @@ static int _dlog(dlog_t *lp, char *fmt, va_list ap)
         if (lp->no_cache)
             flush_log(lp, &now);
         else
-            _dlog_check(lp, &now);
+            inner_dlog_check(lp, &now);
     }
 
     return 0;
 }
 
-int dlog(dlog_t *lp, char *fmt, ...)
+int dlog(dlog_t *lp, char const *fmt, ...)
 {
     pthread_mutex_lock(&lp->lock);
     va_list ap;
     va_start(ap, fmt);
-    int ret = _dlog(lp, fmt, ap);
+    int ret = inner_dlog(lp, fmt, ap);
     va_end(ap);
     pthread_mutex_unlock(&lp->lock);
 
@@ -732,21 +746,24 @@ int dlog_fini(dlog_t *lp)
     }
     else
     {
-        dlog_t *_lp = lp_list_head;
-        while (_lp)
+        dlog_t *lq = lp_list_head;
+        bool not_found = true;
+        while (lq)
         {
-            if (_lp->next == lp)
+            if (lq->next == lp)
             {
-                _lp->next = lp->next;
+                lq->next = lp->next;
+                not_found = false;
                 break;
             }
             else
             {
-                _lp = (dlog_t *)_lp->next;
+                lq = (dlog_t *)lq->next;
             }
         }
 
-        return -1; /* not found */
+        if (not_found)
+            return -1;
     }
 
     struct timeval now;
@@ -816,5 +833,88 @@ int dlog_read_flag(char *str)
     free(s);
 
     return flag;
+}
+
+int dlog_opened_num(void)
+{
+    int n = 0;
+    dlog_t *lp = lp_list_head;
+    while (lp)
+    {
+        n += 1;
+        lp = lp->next;
+    }
+
+    return n;
+}
+
+int dlog_set_sockfd(dlog_t *lp, int fd)
+{
+    if (lp->remote_log == 0)
+        return -1;
+
+    if (lp->sockfd >= 0 && lp->external_sockfd == 0)
+    {
+        close(lp->sockfd);
+    }
+    lp->sockfd = fd;
+    lp->external_sockfd = 1;
+
+    return 0;
+}
+
+void dlog_level_up(void)
+{
+    int i;
+
+    for (i = 0; i <= 7; ++i)
+    {
+        int mask = 0x1 << i;
+        if ((default_dlog_flag & mask) == 0)
+        {
+            default_dlog_flag |= mask;
+            break;
+        }
+    }
+}
+
+void dlog_level_down(void)
+{
+    int i;
+    for (i = 7; i >= 0; --i)
+    {
+        int mask = 0x1 << i;
+        if (default_dlog_flag & mask)
+        {
+            default_dlog_flag &= ~mask;
+            break;
+        }
+    }
+}
+
+void dlog_flush(dlog_t *lp)
+{
+    struct timeval now;
+    gettimeofday(&now, NULL);
+
+    if (lp)
+    {
+        flush_log(lp, &now);
+    }
+    else
+    {
+        lp = lp_list_head;
+        while (lp)
+        {
+            if (lp->w_len)
+                flush_log(lp, &now);
+            lp = (dlog_t *)lp->next;
+        }
+    }
+}
+
+void dlog_flush_all(void)
+{
+    dlog_flush(NULL);
 }
 
