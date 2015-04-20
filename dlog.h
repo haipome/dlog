@@ -82,6 +82,9 @@ int dlog_set_sockfd(dlog_t *lp, int fd);
 
 int dlog(dlog_t *lp, char const *fmt, ...) __attribute__ ((format(printf, 2, 3)));
 
+/* log to stderr */
+void dlog_stderr(char const *fmt, ...);
+
 /* check log, help write log to file as soon as possible */
 void dlog_check(dlog_t *lp, struct timeval *tv);
 void dlog_check_all(void);
@@ -128,7 +131,9 @@ enum
 # define loga(fmt, args...) do { \
     if (default_dlog) { \
         dlog(default_dlog, fmt, ##args); \
-    } \
+    } else { \
+		dlog_stderr(fmt, ##args); \
+	} \
 } while (0)
 
 # define log_vip(fmt, args...) do { \

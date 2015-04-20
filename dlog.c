@@ -28,7 +28,7 @@
 # include "dlog.h"
 
 dlog_t   *default_dlog;
-int      default_dlog_flag;
+int      default_dlog_flag = 0xff;
 
 # define WRITE_INTERVAL_IN_USEC (10 * 1000)     /* 100 ms */
 # define WRITE_BUFFER_CHECK_LEN (32 * 1024)     /* 32 KB */
@@ -692,6 +692,20 @@ int dlog(dlog_t *lp, char const *fmt, ...)
     pthread_mutex_unlock(&lp->lock);
 
     return ret;
+}
+
+void dlog_stderr(char const *fmt, ...)
+{
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    fprintf(stderr, "[%s] ", timeval_str(&now));
+
+    va_list ap;
+    va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+
+	fprintf(stderr, "\n");
 }
 
 # ifdef DLOG_SERVER
