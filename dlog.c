@@ -601,11 +601,20 @@ void dlog_check_all(void)
 static char *timeval_str(struct timeval *tv)
 {
     static char str[64];
+    static time_t last_sec;
 
-    struct tm *t = localtime(&tv->tv_sec);
-    snprintf(str, sizeof(str), "%04d-%02d-%02d %02d:%02d:%02d.%.6d",
-            t->tm_year + 1990, t->tm_mon + 1, t->tm_mday, t->tm_hour,
-            t->tm_min, t->tm_sec, (int)tv->tv_usec);
+    if (tv->tv_sec == last_sec)
+    {
+        snprintf(str + 20, sizeof(str) - 20, "%06d", (int)tv->tv_usec);
+    }
+    else
+    {
+        struct tm *t = localtime(&tv->tv_sec);
+        snprintf(str, sizeof(str), "%04d-%02d-%02d %02d:%02d:%02d.%06d",
+                t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour,
+                t->tm_min, t->tm_sec, (int)tv->tv_usec);
+        last_sec = tv->tv_sec;
+    }
 
     return str;
 }
@@ -702,10 +711,10 @@ void dlog_stderr(char const *fmt, ...)
 
     va_list ap;
     va_start(ap, fmt);
-	vfprintf(stderr, fmt, ap);
-	va_end(ap);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
 
-	fprintf(stderr, "\n");
+    fprintf(stderr, "\n");
 }
 
 # ifdef DLOG_SERVER
