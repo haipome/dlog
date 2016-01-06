@@ -470,6 +470,9 @@ dlog_t *dlog_init(char *base_name, int flag,
     int remote_log = flag & DLOG_REMOTE_LOG;
     flag &= ~DLOG_REMOTE_LOG;
 
+    int no_time = flag & DLOG_NO_TIMESTAMP;
+    flag &= ~DLOG_NO_TIMESTAMP;
+
     dlog_t *lp = calloc(1, sizeof(dlog_t));
     if (lp == NULL)
         return NULL;
@@ -501,6 +504,7 @@ dlog_t *dlog_init(char *base_name, int flag,
     lp->shift_type = flag;
     lp->use_fork   = use_fork;
     lp->no_cache   = no_cache;
+    lp->no_time    = no_time;
     lp->max_size   = max_size;
     lp->log_num    = log_num;
     lp->keep_time  = keep_time;
@@ -628,21 +632,24 @@ static int inner_dlog(dlog_t *lp, char const *fmt, va_list ap)
 
     struct timeval now;
     gettimeofday(&now, NULL);
-    char *timestmap = timeval_str(&now);
 
     ssize_t n  = 0;
     ssize_t ret;
 
     char *p = lp->buf + lp->w_len;
     size_t len = lp->buf_len - lp->w_len;
+    char *timestmap;
 
-    ret = snprintf(p, len, "[%s] ", timestmap);
-    if (ret < 0)
-        return -1;
-
-    p += ret;
-    len -= ret;
-    n += ret;
+    if (!lp->no_time)
+    {
+        timestmap = timeval_str(&now);
+        ret = snprintf(p, len, "[%s] ", timestmap);
+        if (ret < 0)
+            return -1;
+        p += ret;
+        len -= ret;
+        n += ret;
+    }
 
     va_list cap;
     va_copy(cap, ap);
@@ -669,7 +676,10 @@ static int inner_dlog(dlog_t *lp, char const *fmt, va_list ap)
             if (fp == NULL)
                 return -2;
 
-            fprintf(fp, "[%s] ", timestmap);
+            if (!lp->no_time)
+            {
+                fprintf(fp, "[%s] ", timestmap);
+            }
             vfprintf(fp, fmt, ap);
             fprintf(fp, "\n");
 

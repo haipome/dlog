@@ -44,6 +44,7 @@ typedef struct
     time_t              last_shift;
     int                 use_fork;
     int                 no_cache;
+    int                 no_time;
     size_t              max_size;
     int                 log_num;
     int                 keep_time;
@@ -57,22 +58,19 @@ typedef struct
 } dlog_t;
 
 
-/*
- * use DLOG_USE_FORK with flag, when remove expire log file or
- * shift log file, fork a new process to do those job.
- */
+/* flags  */
+
+/* when remove expire log file or shift log file, fork a new process to do those job. */
 # define DLOG_USE_FORK 0x10000
 
-/*
- * use DLOG_NO_CACHE with flag, log will write to file immediately.
- */
+/* use DLOG_NO_CACHE with flag, log will write to file immediately. */
 # define DLOG_NO_CACHE 0x20000
 
-/*
- * use DLOG_REMOTE_LOG with flag, and set base_name as a pointer to
- * struct sockaddr_in, log will be send to remote addr.
- */
+/* also set base_name as a pointer to struct sockaddr_in, log will be send to remote addr. */
 # define DLOG_REMOTE_LOG 0x40000
+
+/* don't prepend timestamp to every message */
+# define DLOG_NO_TIMESTAMP 0x80000
 
 /*
  * example:
@@ -82,8 +80,7 @@ typedef struct
  *
  * fail return NULL.
  */
-dlog_t *dlog_init(char *base_name, int flag,
-        size_t max_size, int log_num, int keep_time);
+dlog_t *dlog_init(char *base_name, int flag, size_t max_size, int log_num, int keep_time);
 
 /* set socket file descriptor when use remote log.
  * this is optional, if you don't set, dlog will create one.
