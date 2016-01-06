@@ -95,6 +95,9 @@ int dlog(dlog_t *lp, char const *fmt, ...) __attribute__ ((format(printf, 2, 3))
 /* log to stderr */
 void dlog_stderr(char const *fmt, ...);
 
+/* log to syslog */
+void dlog_syslog(char const *fmt, ...);
+
 /* check log, help write log to file as soon as possible */
 void dlog_check(dlog_t *lp, struct timeval *tv);
 void dlog_check_all(void);
@@ -142,7 +145,7 @@ enum
     if (default_dlog) { \
         dlog(default_dlog, fmt, ##args); \
     } else { \
-		dlog_stderr(fmt, ##args); \
+		dlog_syslog(fmt, ##args); \
 	} \
 } while (0)
 

@@ -9,6 +9,8 @@
 
 int main()
 {
+    log_info("system error");
+
     dlog_t *lp = dlog_init("test", DLOG_SHIFT_BY_DAY | DLOG_USE_FORK, 0, 0, 0);
     if (lp == NULL)
         error(1, errno, "dlog_init fail");

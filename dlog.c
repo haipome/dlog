@@ -18,6 +18,8 @@
 # include <limits.h>
 # include <unistd.h>
 # include <inttypes.h>
+# include <libgen.h>
+# include <syslog.h>
 # include <sys/types.h>
 # include <sys/stat.h>
 # include <sys/time.h>
@@ -715,6 +717,21 @@ void dlog_stderr(char const *fmt, ...)
     va_end(ap);
 
     fprintf(stderr, "\n");
+}
+
+void dlog_syslog(char const *fmt, ...)
+{
+    char exe_path[PATH_MAX];
+    ssize_t ret = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    exe_path[ret] = 0;
+    openlog(basename(exe_path), LOG_PERROR | LOG_PID, LOG_DAEMON);
+
+    va_list ap;
+    va_start(ap, fmt);
+    vsyslog(LOG_INFO, fmt, ap);
+    va_end(ap);
+
+    closelog();
 }
 
 # ifdef DLOG_SERVER
