@@ -142,8 +142,8 @@ enum
     if (default_dlog) { \
         dlog(default_dlog, fmt, ##args); \
     } else { \
-		dlog_syslog(fmt, ##args); \
-	} \
+        dlog_syslog(fmt, ##args); \
+    } \
 } while (0)
 
 # define log_vip(fmt, args...) do { \
