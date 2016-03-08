@@ -97,6 +97,9 @@ void dlog_stderr(char const *fmt, ...);
 /* log to syslog */
 void dlog_syslog(char const *fmt, ...);
 
+/* log stack backtrace */
+void dlog_backtrace(dlog_t *log);
+
 /* check log, helog write log to file as soon as possible */
 void dlog_check(dlog_t *log, struct timeval *tv);
 void dlog_check_all(void);
@@ -198,6 +201,15 @@ enum
 # define log_user2(fmt, args...) do { \
     if (default_dlog_flag & DLOG_USER2) { \
         loga("[user2]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
+    } \
+} while (0)
+
+# define log_exception(fmt, args...) do { \
+    if (default_dlog_flag & DLOG_FATAL) { \
+        loga("[fatal]%s:%i(%s): " fmt , __FILE__, __LINE__, __func__, ##args); \
+        if (default_dlog) { \
+            dlog_backtrace(default_dlog); \
+        } \
     } \
 } while (0)
 

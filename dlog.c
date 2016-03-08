@@ -20,6 +20,7 @@
 # include <inttypes.h>
 # include <libgen.h>
 # include <syslog.h>
+# include <execinfo.h>
 # include <sys/types.h>
 # include <sys/stat.h>
 # include <sys/time.h>
@@ -592,6 +593,26 @@ void dlog_syslog(char const *fmt, ...)
     vsyslog(LOG_INFO, fmt, ap);
     va_end(ap);
     closelog();
+}
+
+void dlog_backtrace(dlog_t *log)
+{
+    void *stack[64];
+    char **symbols;
+    int size, i, j;
+
+    size = backtrace(stack, 64);
+    symbols = backtrace_symbols(stack, size);
+    if (symbols == NULL)
+        return;
+    if (size == 1)
+        return;
+
+    dlog(log, "%s", "==========backtrace=start==========");
+    for (i = 1, j = 0; i < size; ++i, ++j) {
+        dlog(log, "%2d %s", j, symbols[i]);
+    }
+    dlog(log, "%s", "===========backtrace=end===========");
 }
 
 # ifdef DLOG_SERVER

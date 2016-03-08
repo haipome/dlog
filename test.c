@@ -6,6 +6,17 @@
 
 # include "dlog.h"
 
+int func_b()
+{
+    log_exception("process fail");
+    return -1;
+}
+
+int func_a()
+{
+    return func_b();
+}
+
 int main()
 {
     log_info("system error");
@@ -28,6 +39,7 @@ int main()
     log_debug("debug");
     log_user1("hello");
     log_user2("world");
+    func_a();
 
     return 0;
 }
