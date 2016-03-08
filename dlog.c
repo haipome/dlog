@@ -30,52 +30,43 @@
 # include "dlog.h"
 
 dlog_t   *default_dlog;
-int      default_dlog_flag = 0xff;
+int       default_dlog_flag = 0xff;
 
 # define WRITE_INTERVAL_IN_USEC (10 * 1000)     /* 100 ms */
 # define WRITE_BUFFER_CHECK_LEN (32 * 1024)     /* 32 KB */
 # define WRITE_BUFFER_LEN       (64 * 1024)     /* 64 KB */
 
-# ifdef DEBUG
-static int write_times = 0;
-# endif
-
-/* all opened log is in a list, vist by lp_list_head */
-static dlog_t *lp_list_head = NULL;
+/* all opened log is in a list, vist by log_list_head */
+static dlog_t *log_list_head = NULL;
 
 /* use to make sure dlog_atexit only call once */
-static int init_flag = 0;
+static int dlog_init_flag = 0;
 
-static char *log_suffix(int type, time_t sec, int i)
+static char *log_suffix(int type, time_t time, int index)
 {
     static char str[30];
-
-    if (type == DLOG_SHIFT_BY_SIZE)
-    {
-        if (i)
-            snprintf(str, sizeof(str), "%d.log", i);
-        else
+    if (type == DLOG_SHIFT_BY_SIZE) {
+        if (index) {
+            snprintf(str, sizeof(str), "%d.log", index);
+        } else {
             snprintf(str, sizeof(str), ".log");
+        }
 
         return str;
     }
 
-    struct tm *t = localtime(&sec);
+    struct tm *t = localtime(&time);
     ssize_t n = 0;
 
     switch (type)
     {
     case DLOG_SHIFT_BY_MIN:
         n = snprintf(str, sizeof(str), "_%04d%02d%02d%02d%02d",
-                t->tm_year + 1900, t->tm_mon + 1,
-                t->tm_mday, t->tm_hour, t->tm_min);
-
+                t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
         break;
     case DLOG_SHIFT_BY_HOUR:
         n = snprintf(str, sizeof(str), "_%04d%02d%02d%02d",
-                t->tm_year + 1900, t->tm_mon + 1,
-                t->tm_mday, t->tm_hour);
-
+                t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour);
         break;
     case DLOG_SHIFT_BY_DAY:
         n = snprintf(str, sizeof(str), "_%04d%02d%02d",
@@ -83,135 +74,104 @@ static char *log_suffix(int type, time_t sec, int i)
         break;
     default:
         str[0] = 0;
-
         break;
     }
 
-    if (i)
-        snprintf(str + n, sizeof(str) - n, "_%d.log", i);
-    else
+    if (index) {
+        snprintf(str + n, sizeof(str) - n, "_%d.log", index);
+    } else {
         snprintf(str + n, sizeof(str) - n, ".log");
+    }
 
     return str;
 }
 
 static inline uint64_t timeval_diff(struct timeval *old, struct timeval *new)
 {
-    return (new->tv_sec - old->tv_sec) * (1000 * 1000) -
-        (old->tv_usec - new->tv_usec);
+    return (new->tv_sec - old->tv_sec) * (1000 * 1000) - (old->tv_usec - new->tv_usec);
 }
 
-static int inner_unlink_expire(dlog_t *lp, time_t expire_time)
+static int inner_unlink_expire(dlog_t *log, time_t expire_time)
 {
     char path[PATH_MAX];
     int  num = 0;
     int  i;
 
-    if (lp->log_num == 0)
-    {
-        for (i = 0;; ++i)
-        {
-            snprintf(path, PATH_MAX, "%s%s", lp->base_name,
-                    log_suffix(lp->shift_type, expire_time, i));
-            if (access(path, F_OK) == 0)
+    if (log->log_num == 0) {
+        for (i = 0; ; ++i) {
+            snprintf(path, PATH_MAX, "%s%s", log->base_name, log_suffix(log->shift_type, expire_time, i));
+            if (access(path, F_OK) == 0) {
                 ++num;
-            else
+            } else {
                 break;
+            }
         }
-    }
-    else
-    {
-        num = lp->log_num;
+    } else {
+        num = log->log_num;
     }
 
-    for (i = 0; i < num; ++i)
-    {
-        snprintf(path, PATH_MAX, "%s%s", lp->base_name,
-                log_suffix(lp->shift_type, expire_time, i));
-
+    for (i = 0; i < num; ++i) {
+        snprintf(path, PATH_MAX, "%s%s", log->base_name, log_suffix(log->shift_type, expire_time, i));
         unlink(path);
     }
 
     return 0;
 }
 
-static int unlink_expire(dlog_t *lp, struct timeval *now)
+static int unlink_expire(dlog_t *log, struct timeval *now)
 {
-    if (lp->shift_type == DLOG_SHIFT_BY_SIZE || lp->keep_time == 0)
+    if (log->shift_type == DLOG_SHIFT_BY_SIZE || log->keep_time == 0)
         return 0;
 
     int expire = 0;
     time_t expire_time;
 
-    switch (lp->shift_type)
-    {
+    switch (log->shift_type) {
     case DLOG_SHIFT_BY_MIN:
-        if (now->tv_sec - lp->last_unlink > 60)
-        {
+        if (now->tv_sec - log->last_unlink > 60) {
             expire = 1;
-            expire_time = now->tv_sec - 60 * lp->keep_time;
+            expire_time = now->tv_sec - 60 * log->keep_time;
         }
-
         break;
     case DLOG_SHIFT_BY_HOUR:
-        if (now->tv_sec - lp->last_unlink > 3600)
-        {
+        if (now->tv_sec - log->last_unlink > 3600) {
             expire = 1;
-            expire_time = now->tv_sec - 3600 * lp->keep_time;
+            expire_time = now->tv_sec - 3600 * log->keep_time;
         }
-
         break;
     case DLOG_SHIFT_BY_DAY:
-        if (now->tv_sec - lp->last_unlink > 86400)
-        {
+        if (now->tv_sec - log->last_unlink > 86400) {
             expire = 1;
-            expire_time = now->tv_sec - 86400 * lp->keep_time;
+            expire_time = now->tv_sec - 86400 * log->keep_time;
         }
-
         break;
     }
 
-    if (expire)
-    {
-        lp->last_unlink = now->tv_sec;
-# ifdef DEBUG
-        struct timeval start, end;
-        gettimeofday(&start, NULL);
-# endif
-        if (lp->use_fork)
-        {
-            if (fork() == 0)
-            {
-                inner_unlink_expire(lp, expire_time);
+    if (expire) {
+        log->last_unlink = now->tv_sec;
+        if (log->use_fork) {
+            if (fork() == 0) {
+                inner_unlink_expire(log, expire_time);
                 _exit(0);
             }
+        } else {
+            inner_unlink_expire(log, expire_time);
         }
-        else
-        {
-            inner_unlink_expire(lp, expire_time);
-        }
-# ifdef DEBUG
-        gettimeofday(&end, NULL);
-        printf("unlink time: %"PRIu64"\n", timeval_diff(&start, &end));
-# endif
     }
 
     return 0;
 }
 
-static char *log_name(dlog_t *lp, struct timeval *now)
+static char *get_log_name(dlog_t *log, struct timeval *now)
 {
-    sprintf(lp->name, "%s%s", lp->base_name,
-            log_suffix(lp->shift_type, now->tv_sec, 0));
-
-    return lp->name;
+    sprintf(log->name, "%s%s", log->base_name, log_suffix(log->shift_type, now->tv_sec, 0));
+    return log->name;
 }
 
-static int inner_shift_log(dlog_t *lp, struct timeval *now)
+static int inner_shift_log(dlog_t *log, struct timeval *now)
 {
-    if (lp->log_num == 1)
-    {
-        unlink(lp->name);
+    if (log->log_num == 1) {
+        unlink(log->name);
         return 0;
     }
 
@@ -220,33 +180,23 @@ static int inner_shift_log(dlog_t *lp, struct timeval *now)
     int  num = 0;
     int  i;
 
-    if (lp->log_num == 0)
-    {
-        for (i = 0;; ++i)
-        {
-            snprintf(path, PATH_MAX, "%s%s", lp->base_name,
-                    log_suffix(lp->shift_type, now->tv_sec, i));
-            if (access(path, F_OK) == 0)
+    if (log->log_num == 0) {
+        for (i = 0; ; ++i) {
+            snprintf(path, PATH_MAX, "%s%s", log->base_name, log_suffix(log->shift_type, now->tv_sec, i));
+            if (access(path, F_OK) == 0) {
                 ++num;
-            else
+            } else {
                 break;
+            }
         }
-    }
-    else
-    {
-        num = lp->log_num - 1;
+    } else {
+        num = log->log_num - 1;
     }
 
-    for (i = num - 1; i >= 0; --i)
-    {
-        snprintf(path, PATH_MAX, "%s%s", lp->base_name,
-                log_suffix(lp->shift_type, now->tv_sec, i));
-
-        if (access(path, F_OK) == 0)
-        {
-            snprintf(new_path, PATH_MAX, "%s%s", lp->base_name,
-                    log_suffix(lp->shift_type, now->tv_sec, i + 1));
-
+    for (i = num - 1; i >= 0; --i) {
+        snprintf(path, PATH_MAX, "%s%s", log->base_name, log_suffix(log->shift_type, now->tv_sec, i));
+        if (access(path, F_OK) == 0) {
+            snprintf(new_path, PATH_MAX, "%s%s", log->base_name, log_suffix(log->shift_type, now->tv_sec, i + 1));
             rename(path, new_path);
         }
     }
@@ -254,48 +204,33 @@ static int inner_shift_log(dlog_t *lp, struct timeval *now)
     return 0;
 }
 
-static int shift_log(dlog_t *lp, struct timeval *now)
+static int shift_log(dlog_t *log, struct timeval *now)
 {
-    if (lp->max_size == 0)
+    if (log->max_size == 0)
         return 0;
-
-    if (lp->use_fork && ((now->tv_sec - lp->last_shift) <= 3))
+    if (log->use_fork && ((now->tv_sec - log->last_shift) <= 3))
         return 0;
 
     struct stat fs;
-    if (stat(lp->name, &fs) < 0)
-    {
-        if (errno == ENOENT)
+    if (stat(log->name, &fs) < 0) {
+        if (errno == ENOENT) {
             return 0;
-        else
+        } else {
             return -1;
+        }
     }
 
     int ret = 0;
-
-    if (fs.st_size >= lp->max_size)
-    {
-        lp->last_shift = now->tv_sec;
-# ifdef DEBUG
-        struct timeval start, end;
-        gettimeofday(&start, NULL);
-# endif
-        if (lp->use_fork)
-        {
-            if (fork() == 0)
-            {
-                inner_shift_log(lp, now);
+    if (fs.st_size >= log->max_size) {
+        log->last_shift = now->tv_sec;
+        if (log->use_fork) {
+            if (fork() == 0) {
+                inner_shift_log(log, now);
                 _exit(0);
             }
+        } else {
+            inner_shift_log(log, now);
         }
-        else
-        {
-            inner_shift_log(lp, now);
-        }
-# ifdef DEBUG
-        gettimeofday(&end, NULL);
-        printf("shift time: %"PRIu64"\n", timeval_diff(&start, &end));
-# endif
     }
 
     return ret;
@@ -304,32 +239,28 @@ static int shift_log(dlog_t *lp, struct timeval *now)
 static ssize_t xwrite(int fd, const void *buf, size_t len)
 {
     ssize_t nr;
-    while (1)
-    {
+    while (1) {
         nr = write(fd, buf, len);
-        if ((nr < 0) && (errno == EAGAIN || errno == EINTR))
+        if ((nr < 0) && (errno == EAGAIN || errno == EINTR)) {
             continue;
-
+        }
         return nr;
     }
 }
 
-static ssize_t write_in_full(int fd, const void *buf, size_t count)
+static ssize_t write_in_full(int fd, const void *buf, size_t size)
 {
     const char *p = buf;
     ssize_t total = 0;
-
-    while (count > 0)
-    {
-        ssize_t written = xwrite(fd, p, count);
+    while (size > 0) {
+        ssize_t written = xwrite(fd, p, size);
         if (written < 0)
             return -1;
-        if (!written)
-        {
+        if (!written) {
             errno = ENOSPC;
             return -1;
         }
-        count -= written;
+        size -= written;
         p += written;
         total += written;
     }
@@ -337,110 +268,88 @@ static ssize_t write_in_full(int fd, const void *buf, size_t count)
     return total;
 }
 
-static int flush_log(dlog_t *lp, struct timeval *now)
+static int flush_log(dlog_t *log, struct timeval *now)
 {
-    if (lp->w_len == 0)
+    if (log->write_len == 0)
         return 0;
 
     ssize_t n = 0;
     int ret_val = 0;
-
-    if (lp->remote_log)
-    {
-        /* lasz init, because dlog_init may call befor daemon */
-        if (lp->sockfd < 0)
-        {
+    if (log->remote_log) {
+        if (log->sockfd < 0) {
             int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-            if (sockfd < 0)
-            {
+            if (sockfd < 0) {
                 ret_val = -1;
                 goto end_lable;
             }
-            lp->sockfd = sockfd;
+            log->sockfd = sockfd;
         }
-
-        n = sendto(lp->sockfd, lp->buf, lp->w_len, 0, (struct sockaddr *)&lp->addr, sizeof(lp->addr));
-        if (n < 0)
-        {
-            if (errno == EBADF)
-            {
-                lp->sockfd = -1;
-                lp->external_sockfd = 0;
+        n = sendto(log->sockfd, log->buf, log->write_len, 0, (struct sockaddr *)&log->addr, sizeof(log->addr));
+        if (n < 0) {
+            if (errno == EBADF) {
+                log->sockfd = -1;
+                log->external_sockfd = 0;
             }
             ret_val = -1;
             goto end_lable;
         }
-    }
-    else
-    {
-        log_name(lp, now);
-        shift_log(lp, now);
-        unlink_expire(lp, now);
+    } else {
+        get_log_name(log, now);
+        shift_log(log, now);
+        unlink_expire(log, now);
 
-        int fd = open(lp->name, O_WRONLY | O_APPEND | O_CREAT, 0664);
-        if (fd < 0)
-        {
+        int fd = open(log->name, O_WRONLY | O_APPEND | O_CREAT, 0664);
+        if (fd < 0) {
             ret_val = -1;
             goto end_lable;
         }
-        n = write_in_full(fd, lp->buf, lp->w_len);
+        n = write_in_full(fd, log->buf, log->write_len);
         close(fd);
-        if (n < 0)
-        {
+        if (n < 0) {
             ret_val = -1;
             goto end_lable;
         }
     }
 
 end_lable:
-    lp->w_len = 0;
-# ifdef DEBUG
-    ++write_times;
-# endif
-    lp->last_write = *now;
+    log->write_len = 0;
+    log->last_write = *now;
 
     return ret_val;
 }
 
 static void dlog_atexit(void)
 {
-    dlog_t *lp = lp_list_head;
-
-    while (lp)
-    {
-        dlog_t *lq = lp;
-        lp = (dlog_t *)lp->next;
-        dlog_fini(lq);
+    dlog_t *log = log_list_head;
+    while (log) {
+        dlog_t *tmp_log = log;
+        log = (dlog_t *)log->next;
+        dlog_fini(tmp_log);
     }
 }
 
-static void *dlog_free(dlog_t *lp)
+static void *dlog_free(dlog_t *log)
 {
-    if (lp->remote_log && lp->external_sockfd == 0 && lp->sockfd >= 0)
-    {
-        close(lp->sockfd);
+    if (log->remote_log && log->external_sockfd == 0 && log->sockfd >= 0) {
+        close(log->sockfd);
     }
-    free(lp->base_name);
-    free(lp->name);
-    free(lp->buf);
-    free(lp);
+    free(log->base_name);
+    free(log->name);
+    free(log->buf);
+    free(log);
 
     return NULL;
 }
 
 static int is_remote_log(char *base_name, struct sockaddr_in *addr)
 {
-    if (strchr(base_name, ':'))
-    {
+    if (strchr(base_name, ':')) {
         char name[PATH_MAX] = { 0 };
         strncpy(name, base_name, sizeof(name) - 1);
-
         char *ip = strtok(name, ": \t\n\r");
         char *port = strtok(NULL, ": \t\n\r");
-
         if (ip == NULL || port == NULL)
             return -1;
-
         memset(addr, 0, sizeof(struct sockaddr_in));
         addr->sin_family = AF_INET;
         if (inet_aton(ip, &addr->sin_addr) == 0)
@@ -448,15 +357,13 @@ static int is_remote_log(char *base_name, struct sockaddr_in *addr)
         addr->sin_port = htons((unsigned short)atoi(port));
         if (addr->sin_port == 0)
             return -1;
-
         return 1;
     }
 
     return 0;
 }
 
-dlog_t *dlog_init(char *base_name, int flag,
-        size_t max_size, int log_num, int keep_time)
+dlog_t *dlog_init(char *base_name, int flag, size_t max_size, int log_num, int keep_time)
 {
     if (base_name == NULL)
         return NULL;
@@ -470,131 +377,98 @@ dlog_t *dlog_init(char *base_name, int flag,
     int remote_log = flag & DLOG_REMOTE_LOG;
     flag &= ~DLOG_REMOTE_LOG;
 
-    int no_time = flag & DLOG_NO_TIMESTAMP;
+    int no_timestamp = flag & DLOG_NO_TIMESTAMP;
     flag &= ~DLOG_NO_TIMESTAMP;
 
-    dlog_t *lp = calloc(1, sizeof(dlog_t));
-    if (lp == NULL)
+    dlog_t *log = calloc(1, sizeof(dlog_t));
+    if (log == NULL)
         return NULL;
 
-    if (remote_log)
-    {
-        lp->addr = *((struct sockaddr_in *)base_name);
-    }
-    else
-    {
-        if ((remote_log = is_remote_log(base_name, &lp->addr)) < 0)
-            return dlog_free(lp);
-        if (remote_log == 0)
-        {
-            if ((lp->base_name = strdup(base_name)) == NULL)
-                return dlog_free(lp);
+    if (remote_log) {
+        log->addr = *((struct sockaddr_in *)base_name);
+    } else {
+        if ((remote_log = is_remote_log(base_name, &log->addr)) < 0) {
+            return dlog_free(log);
+        }
+        if (remote_log == 0) {
+            if ((log->base_name = strdup(base_name)) == NULL) {
+                return dlog_free(log);
+            }
         }
     }
-
     if (!remote_log && (flag < DLOG_SHIFT_BY_SIZE || flag > DLOG_SHIFT_BY_DAY))
         return NULL;
 
-    lp->name = malloc(strlen(base_name) + 30);
-    lp->buf_len = WRITE_BUFFER_LEN;
-    lp->buf = malloc(lp->buf_len);
-    if (lp->name == NULL || lp->buf == NULL)
-        return dlog_free(lp);
+    log->name = malloc(strlen(base_name) + 30);
+    log->buf_len = WRITE_BUFFER_LEN;
+    log->buf = malloc(log->buf_len);
+    if (log->name == NULL || log->buf == NULL)
+        return dlog_free(log);
 
-    lp->shift_type = flag;
-    lp->use_fork   = use_fork;
-    lp->no_cache   = no_cache;
-    lp->no_time    = no_time;
-    lp->max_size   = max_size;
-    lp->log_num    = log_num;
-    lp->keep_time  = keep_time;
-    lp->remote_log = remote_log;
-    lp->sockfd     = -1;
+    log->shift_type   = flag;
+    log->use_fork     = use_fork;
+    log->no_cache     = no_cache;
+    log->no_timestamp = no_timestamp;
+    log->max_size     = max_size;
+    log->log_num      = log_num;
+    log->keep_time    = keep_time;
+    log->remote_log   = remote_log;
+    log->sockfd       = -1;
 
     struct timeval now;
     gettimeofday(&now, NULL);
-    lp->last_write = now;
+    log->last_write = now;
+    pthread_mutex_init(&log->lock, NULL);
 
-    pthread_mutex_init(&lp->lock, NULL);
-
-    if (init_flag == 0)
-    {
+    if (dlog_init_flag == 0) {
         atexit(dlog_atexit);
-        init_flag = 1;
+        dlog_init_flag = 1;
     }
 
-    if (!lp->remote_log)
-    {
-        int fd = open(log_name(lp, &now), O_WRONLY | O_APPEND | O_CREAT, 0664);
+    if (!log->remote_log) {
+        int fd = open(get_log_name(log, &now), O_WRONLY | O_APPEND | O_CREAT, 0664);
         if (fd < 0)
-            return dlog_free(lp);
+            return dlog_free(log);
         close(fd);
     }
 
-    if (lp_list_head == NULL)
-    {
-        lp_list_head = lp;
-    }
-    else
-    {
-        dlog_t *lq = lp_list_head;
-        while (lq->next)
-            lq = (dlog_t *)lq->next;
-        lq->next = (void *)lp;
+    if (log_list_head == NULL) {
+        log_list_head = log;
+    } else {
+        dlog_t *tmp_log = log_list_head;
+        while (tmp_log->next)
+            tmp_log = (dlog_t *)tmp_log->next;
+        tmp_log->next = (void *)log;
     }
 
-    return lp;
+    return log;
 }
 
-static inline void inner_dlog_check(dlog_t *lp, struct timeval *now)
+static inline void inner_dlog_check(dlog_t *log, struct timeval *now)
 {
-    if ((timeval_diff(&lp->last_write, now) >= WRITE_INTERVAL_IN_USEC) ||
-            (lp->w_len >= WRITE_BUFFER_CHECK_LEN))
-    {
-        flush_log(lp, now);
+    if ((timeval_diff(&log->last_write, now) >= WRITE_INTERVAL_IN_USEC) ||
+            (log->write_len >= WRITE_BUFFER_CHECK_LEN)) {
+        flush_log(log, now);
     }
 }
 
-void dlog_check(dlog_t *lp, struct timeval *tv)
+void dlog_check(dlog_t *log, struct timeval *tv)
 {
-    if (lp)
-    {
-        if (lp->w_len == 0)
-            return;
-    }
-    else
-    {
-        lp = lp_list_head;
-        while (lp)
-        {
-            if (lp->w_len)
-                break;
-            lp = (dlog_t *)lp->next;
-        }
-        if (lp == NULL)
-            return;
-    }
-
     struct timeval now;
-
-    if (tv == NULL)
-    {
+    if (tv == NULL) {
         gettimeofday(&now, NULL);
         tv = &now;
     }
 
-    if (lp)
-    {
-        inner_dlog_check(lp, tv);
-    }
-    else
-    {
-        lp = lp_list_head;
-        while (lp)
-        {
-            if (lp->w_len)
-                inner_dlog_check(lp, tv);
-            lp = (dlog_t *)lp->next;
+    if (log) {
+        inner_dlog_check(log, tv);
+    } else {
+        log = log_list_head;
+        while (log) {
+            if (log->write_len) {
+                inner_dlog_check(log, tv);
+            }
+            log = (dlog_t *)log->next;
         }
     }
 }
@@ -608,13 +482,9 @@ static char *timeval_str(struct timeval *tv)
 {
     static char str[64];
     static time_t last_sec;
-
-    if (tv->tv_sec == last_sec)
-    {
+    if (tv->tv_sec == last_sec) {
         snprintf(str + 20, sizeof(str) - 20, "%06d", (int)tv->tv_usec);
-    }
-    else
-    {
+    } else {
         struct tm *t = localtime(&tv->tv_sec);
         snprintf(str, sizeof(str), "%04d-%02d-%02d %02d:%02d:%02d.%06d",
                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour,
@@ -625,92 +495,74 @@ static char *timeval_str(struct timeval *tv)
     return str;
 }
 
-static int inner_dlog(dlog_t *lp, char const *fmt, va_list ap) 
+static int inner_dlog(dlog_t *log, char const *fmt, va_list ap) 
 {
-    if (!lp || !fmt)
+    if (!log || !fmt)
         return -1;
 
+    ssize_t ret;
+    ssize_t n = 0;
+    char *p = log->buf + log->write_len;
+    size_t cache_len = log->buf_len - log->write_len;
+    char *timestmap;
     struct timeval now;
     gettimeofday(&now, NULL);
 
-    ssize_t n  = 0;
-    ssize_t ret;
-
-    char *p = lp->buf + lp->w_len;
-    size_t len = lp->buf_len - lp->w_len;
-    char *timestmap;
-
-    if (!lp->no_time)
-    {
+    if (!log->no_timestamp) {
         timestmap = timeval_str(&now);
-        ret = snprintf(p, len, "[%s] ", timestmap);
+        ret = snprintf(p, cache_len, "[%s] ", timestmap);
         if (ret < 0)
             return -1;
+        cache_len -= ret;
         p += ret;
-        len -= ret;
         n += ret;
     }
 
     va_list cap;
     va_copy(cap, ap);
-    ret = vsnprintf(p, len, fmt, cap);
-
-    if (ret < 0)
-    {
+    ret = vsnprintf(p, cache_len, fmt, cap);
+    if (ret < 0) {
         return -1;
-    }
-    else if (ret >= len)
-    {
-        if (lp->remote_log)
-        {
-            /* drop the remaining */
-            n += len - 1;
-            lp->w_len += n;
-            flush_log(lp, &now);
-        }
-        else
-        {
-            flush_log(lp, &now);
-
-            FILE *fp = fopen(log_name(lp, &now), "a+");
+    } else if (ret >= cache_len) {
+        if (log->remote_log) {
+            n += cache_len - 1;
+            log->write_len += n;
+            flush_log(log, &now);
+        } else {
+            flush_log(log, &now);
+            FILE *fp = fopen(get_log_name(log, &now), "a+");
             if (fp == NULL)
                 return -2;
-
-            if (!lp->no_time)
-            {
+            if (!log->no_timestamp) {
                 fprintf(fp, "[%s] ", timestmap);
             }
             vfprintf(fp, fmt, ap);
             fprintf(fp, "\n");
-
             fclose(fp);
         }
-    }
-    else
-    {
+    } else {
         n += ret;
-        lp->w_len += n;
+        log->write_len += n;
+        log->buf[log->write_len] = '\n';
+        log->write_len += 1;
 
-        lp->buf[lp->w_len] = '\n';
-        lp->w_len += 1;
-
-        if (lp->no_cache)
-            flush_log(lp, &now);
+        if (log->no_cache)
+            flush_log(log, &now);
         else
-            inner_dlog_check(lp, &now);
+            inner_dlog_check(log, &now);
     }
 
     return 0;
 }
 
-int dlog(dlog_t *lp, char const *fmt, ...)
+int dlog(dlog_t *log, char const *fmt, ...)
 {
-    pthread_mutex_lock(&lp->lock);
+    pthread_mutex_lock(&log->lock);
     va_list ap;
     va_start(ap, fmt);
-    int ret = inner_dlog(lp, fmt, ap);
+    int ret = inner_dlog(log, fmt, ap);
     va_end(ap);
-    pthread_mutex_unlock(&lp->lock);
+    pthread_mutex_unlock(&log->lock);
 
     return ret;
 }
@@ -725,7 +577,6 @@ void dlog_stderr(char const *fmt, ...)
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
-
     fprintf(stderr, "\n");
 }
 
@@ -734,84 +585,70 @@ void dlog_syslog(char const *fmt, ...)
     char exe_path[PATH_MAX];
     ssize_t ret = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
     exe_path[ret] = 0;
-    openlog(basename(exe_path), LOG_PERROR | LOG_PID, LOG_DAEMON);
 
+    openlog(basename(exe_path), LOG_PERROR | LOG_PID, LOG_DAEMON);
     va_list ap;
     va_start(ap, fmt);
     vsyslog(LOG_INFO, fmt, ap);
     va_end(ap);
-
     closelog();
 }
 
 # ifdef DLOG_SERVER
-int dlog_server(dlog_t *lp, char *buf, size_t size, struct sockaddr_in *addr)
+int dlog_server(dlog_t *log, char *buf, size_t size, struct sockaddr_in *addr)
 {
-    if (lp->remote_log)
+    if (log->remote_log)
         return -1;
 
     struct timeval now;
     gettimeofday(&now, NULL);
 
-    log_name(lp, &now);
-    shift_log(lp, &now);
-    unlink_expire(lp, &now);
+    get_log_name(log, &now);
+    shift_log(log, &now);
+    unlink_expire(log, &now);
 
-    int fd = open(lp->name, O_WRONLY | O_APPEND | O_CREAT, 0664);
+    int fd = open(log->name, O_WRONLY | O_APPEND | O_CREAT, 0664);
     if (fd < 0)
         return -2;
 
     ssize_t n;
-    if (addr)
-    {
+    if (addr) {
         char addr_str[30];
         int len = snprintf(addr_str, sizeof(addr_str), "[%s:%u]\n", \
                 inet_ntoa(addr->sin_addr), ntohs(addr->sin_port));
-
         n = write_in_full(fd, addr_str, len);
-        if (n < 0)
-        {
+        if (n < 0) {
             close(fd);
             return -3;
         }
     }
     n = write_in_full(fd, buf, size);
-    if (n < 0)
-    {
+    if (n < 0) {
         close(fd);
         return -4;
     }
-
     close(fd);
 
     return 0;
 }
 # endif
 
-int dlog_fini(dlog_t *lp)
+int dlog_fini(dlog_t *log)
 {
-    if (lp == lp_list_head)
-    {
-        lp_list_head = (dlog_t *)lp->next;
-    }
-    else
-    {
-        dlog_t *lq = lp_list_head;
+    if (log == log_list_head) {
+        log_list_head = (dlog_t *)log->next;
+    } else {
+        dlog_t *tmp_log = log_list_head;
         bool not_found = true;
-        while (lq)
-        {
-            if (lq->next == lp)
-            {
-                lq->next = lp->next;
+        while (tmp_log) {
+            if (tmp_log->next == log) {
+                tmp_log->next = log->next;
                 not_found = false;
                 break;
-            }
-            else
-            {
-                lq = (dlog_t *)lq->next;
+            } else {
+                tmp_log = (dlog_t *)tmp_log->next;
             }
         }
-
         if (not_found)
             return -1;
     }
@@ -819,12 +656,8 @@ int dlog_fini(dlog_t *lp)
     struct timeval now;
     gettimeofday(&now, NULL);
 
-    flush_log(lp, &now);
-
-    dlog_free(lp);
-# ifdef DEBUG
-    printf("write %d times\n", write_times);
-# endif
+    flush_log(log, &now);
+    dlog_free(log);
 
     return 0;
 }
@@ -832,8 +665,7 @@ int dlog_fini(dlog_t *lp)
 static char *strtolower(char *str)
 {
     char *s = str;
-    while (*s)
-    {
+    while (*s) {
         if (*s >= 'A' && *s <= 'Z')
             *s += ('a' - 'A');
         ++s;
@@ -848,16 +680,13 @@ int dlog_read_flag(char *str)
         return 0;
 
     int flag = 0;
-
     char *s = strdup(str);
     if (s == NULL) 
         return -1;
 
     char *f = strtok(s, "\r\n\t ,");
-    while (f != NULL)
-    {
+    while (f != NULL) {
         strtolower(f);
-
         if (strcmp(f, "fatal") == 0)
             flag |= DLOG_FATAL;
         else if (strcmp(f, "error") == 0)
@@ -876,10 +705,8 @@ int dlog_read_flag(char *str)
             flag |= DLOG_USER2;
         else
             ;
-
         f = strtok(NULL, "\r\n\t ,");
     }
-
     free(s);
 
     return flag;
@@ -888,27 +715,25 @@ int dlog_read_flag(char *str)
 int dlog_opened_num(void)
 {
     int n = 0;
-    dlog_t *lp = lp_list_head;
-    while (lp)
-    {
+    dlog_t *log = log_list_head;
+    while (log) {
         n += 1;
-        lp = lp->next;
+        log = log->next;
     }
 
     return n;
 }
 
-int dlog_set_sockfd(dlog_t *lp, int fd)
+int dlog_set_sockfd(dlog_t *log, int fd)
 {
-    if (lp->remote_log == 0)
+    if (log->remote_log == 0)
         return -1;
 
-    if (lp->sockfd >= 0 && lp->external_sockfd == 0)
-    {
-        close(lp->sockfd);
+    if (log->sockfd >= 0 && log->external_sockfd == 0) {
+        close(log->sockfd);
     }
-    lp->sockfd = fd;
-    lp->external_sockfd = 1;
+    log->sockfd = fd;
+    log->external_sockfd = 1;
 
     return 0;
 }
@@ -916,12 +741,9 @@ int dlog_set_sockfd(dlog_t *lp, int fd)
 void dlog_level_up(void)
 {
     int i;
-
-    for (i = 0; i <= 7; ++i)
-    {
+    for (i = 0; i <= 7; ++i) {
         int mask = 0x1 << i;
-        if ((default_dlog_flag & mask) == 0)
-        {
+        if ((default_dlog_flag & mask) == 0) {
             default_dlog_flag |= mask;
             break;
         }
@@ -931,34 +753,28 @@ void dlog_level_up(void)
 void dlog_level_down(void)
 {
     int i;
-    for (i = 7; i >= 0; --i)
-    {
+    for (i = 7; i >= 0; --i) {
         int mask = 0x1 << i;
-        if (default_dlog_flag & mask)
-        {
+        if (default_dlog_flag & mask) {
             default_dlog_flag &= ~mask;
             break;
         }
     }
 }
 
-void dlog_flush(dlog_t *lp)
+void dlog_flush(dlog_t *log)
 {
     struct timeval now;
     gettimeofday(&now, NULL);
 
-    if (lp)
-    {
-        flush_log(lp, &now);
-    }
-    else
-    {
-        lp = lp_list_head;
-        while (lp)
-        {
-            if (lp->w_len)
-                flush_log(lp, &now);
-            lp = (dlog_t *)lp->next;
+    if (log) {
+        flush_log(log, &now);
+    } else {
+        log = log_list_head;
+        while (log) {
+            if (log->write_len)
+                flush_log(log, &now);
+            log = (dlog_t *)log->next;
         }
     }
 }

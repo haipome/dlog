@@ -51,8 +51,7 @@ void print_help(void)
 int running;
 void sig_handle(int signo)
 {
-    switch (signo)
-    {
+    switch (signo) {
     case SIGQUIT:
         running = 0;
         break;
@@ -80,16 +79,14 @@ int strtotype(char *type)
 
 int main(int argc, char *argv[])
 {
-    if (argc == 1)
-    {
+    if (argc == 1) {
         print_help();
         exit(1);
     }
 
     opterr = 1;
     int option_index = 0;
-    struct option long_options[] =
-    {
+    struct option long_options[] = {
         {"help",    no_argument,       NULL, 'h'},
         {"base",    required_argument, NULL, 'b'},
         {"type",    required_argument, NULL, 't'},
@@ -112,10 +109,8 @@ int main(int argc, char *argv[])
     bool in_daemon  = 0;
 
     int c;
-    while ((c = getopt_long(argc, argv, "hb:t:s:n:k:p:ad", long_options, &option_index)) != -1)
-    {
-        switch (c)
-        {
+    while ((c = getopt_long(argc, argv, "hb:t:s:n:k:p:ad", long_options, &option_index)) != -1) {
+        switch (c) {
         case 'h':
             print_help();
             exit(0);
@@ -158,8 +153,10 @@ int main(int argc, char *argv[])
     if (shift_type == 0)
         shift_type = DLOG_SHIFT_BY_DAY;
 
-    if (in_daemon)
-        daemon(true, true);
+    if (in_daemon) {
+        if (daemon(true, true))
+            error(1, errno, "deamon fail");
+    }
 
     dlog_t *lp = dlog_init(base_name, shift_type | DLOG_USE_FORK, max_size, log_num, keep_time);
     if (lp == NULL)
@@ -183,15 +180,13 @@ int main(int argc, char *argv[])
     signal(SIGQUIT, sig_handle);
     signal(SIGCHLD, SIG_IGN);
 
-    while (running)
-    {
+    while (running) {
         fd_set r_set;
         FD_ZERO(&r_set);
         FD_SET(sockfd, &r_set);
 
         int ret = select(sockfd + 1, &r_set, NULL, NULL, NULL);
-        if (ret > 0 && FD_ISSET(sockfd, &r_set))
-        {
+        if (ret > 0 && FD_ISSET(sockfd, &r_set)) {
             struct sockaddr_in client;
             socklen_t len = sizeof(client);
 

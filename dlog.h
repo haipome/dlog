@@ -20,7 +20,7 @@
  * 1. catch the SIGSEGV signal with flag SA_RESETHAND, and call dlog_flush_all
  *    in the signal process function to make sure log buffer are write into file.
  *
- * 2. call dlog_check_all in the main loop or in timer, to help write log to file
+ * 2. call dlog_check_all in the main loop or in timer, to helog write log to file
  *    as soon as possible.
  */
 
@@ -39,12 +39,12 @@ typedef struct
     struct timeval      last_write;
     char                *buf;
     size_t              buf_len;
-    size_t              w_len;
+    size_t              write_len;
     int                 shift_type;
     time_t              last_shift;
     int                 use_fork;
     int                 no_cache;
-    int                 no_time;
+    int                 no_timestamp;
     size_t              max_size;
     int                 log_num;
     int                 keep_time;
@@ -61,16 +61,16 @@ typedef struct
 /* flags  */
 
 /* when remove expire log file or shift log file, fork a new process to do those job. */
-# define DLOG_USE_FORK 0x10000
+# define DLOG_USE_FORK      0x10000
 
 /* use DLOG_NO_CACHE with flag, log will write to file immediately. */
-# define DLOG_NO_CACHE 0x20000
+# define DLOG_NO_CACHE      0x20000
 
 /* also set base_name as a pointer to struct sockaddr_in, log will be send to remote addr. */
-# define DLOG_REMOTE_LOG 0x40000
+# define DLOG_REMOTE_LOG    0x40000
 
 /* don't prepend timestamp to every message */
-# define DLOG_NO_TIMESTAMP 0x80000
+# define DLOG_NO_TIMESTAMP  0x80000
 
 /*
  * example:
@@ -82,12 +82,14 @@ typedef struct
  */
 dlog_t *dlog_init(char *base_name, int flag, size_t max_size, int log_num, int keep_time);
 
-/* set socket file descriptor when use remote log.
+/* 
+ * set udp socket file descriptor when use remote log.
  * this is optional, if you don't set, dlog will create one.
  */
-int dlog_set_sockfd(dlog_t *lp, int fd);
+int dlog_set_sockfd(dlog_t *log, int fd);
 
-int dlog(dlog_t *lp, char const *fmt, ...) __attribute__ ((format(printf, 2, 3)));
+/* log a message */
+int dlog(dlog_t *log, char const *fmt, ...) __attribute__ ((format(printf, 2, 3)));
 
 /* log to stderr */
 void dlog_stderr(char const *fmt, ...);
@@ -95,18 +97,19 @@ void dlog_stderr(char const *fmt, ...);
 /* log to syslog */
 void dlog_syslog(char const *fmt, ...);
 
-/* check log, help write log to file as soon as possible */
-void dlog_check(dlog_t *lp, struct timeval *tv);
+/* check log, helog write log to file as soon as possible */
+void dlog_check(dlog_t *log, struct timeval *tv);
 void dlog_check_all(void);
 
 /* flush log immediately */
-void dlog_flush(dlog_t *lp);
+void dlog_flush(dlog_t *log);
 void dlog_flush_all(void);
 
-int dlog_fini(dlog_t *lp);
+/* close a log object */
+int dlog_fini(dlog_t *log);
 
 # ifdef DLOG_SERVER
-int dlog_server(dlog_t *lp, char *buf, size_t size, struct sockaddr_in *addr);
+int dlog_server(dlog_t *log, char *buf, size_t size, struct sockaddr_in *addr);
 # endif
 
 /* return all opened dlog instance number */
@@ -118,7 +121,7 @@ int dlog_opened_num(void);
  *     default_dlog_flag = DLOG_FATAL | DLOG_ERROR | DLOG_INFO;
  */
 extern dlog_t   *default_dlog;
-extern int      default_dlog_flag;
+extern int       default_dlog_flag;
 
 /* read flag from string like: error, info, NOTICE  DEBUG */
 int dlog_read_flag(char *str);
@@ -197,8 +200,6 @@ enum
         loga("[user2]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
     } \
 } while (0)
-
-# define log_level(level, fmt, args...) log_##level(fmt, ##args)
 
 # endif
 
