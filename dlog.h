@@ -24,16 +24,14 @@
  *    as soon as possible.
  */
 
-enum
-{
+enum {
     DLOG_SHIFT_BY_SIZE = 1,
     DLOG_SHIFT_BY_MIN,
     DLOG_SHIFT_BY_HOUR,
     DLOG_SHIFT_BY_DAY,
 };
 
-typedef struct
-{
+typedef struct {
     char                *base_name;
     char                *name;
     struct timeval      last_write;
@@ -132,8 +130,7 @@ int dlog_read_flag(char *str);
 void dlog_level_up(void);
 void dlog_level_down(void);
 
-enum
-{
+enum {
     DLOG_FATAL  = 0x1,
     DLOG_ERROR  = 0x2,
     DLOG_WARN   = 0x4,
