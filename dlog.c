@@ -28,10 +28,12 @@
 # include <netinet/in.h>
 # include <arpa/inet.h>
 
-# include "dlog.h"
+# include "ut_log.h"
 
 dlog_t   *default_dlog;
 int       default_dlog_flag = 0xff;
+
+dlog_on_fatal_cb dlog_on_fatal;
 
 # define WRITE_INTERVAL_IN_USEC (10 * 1000)     /* 100 ms */
 # define WRITE_BUFFER_CHECK_LEN (32 * 1024)     /* 32 KB */
@@ -342,7 +344,7 @@ static void *dlog_free(dlog_t *log)
     return NULL;
 }
 
-static int is_remote_log(char *base_name, struct sockaddr_in *addr)
+static int is_remote_log(const char *base_name, struct sockaddr_in *addr)
 {
     if (strchr(base_name, ':')) {
         char name[PATH_MAX] = { 0 };
@@ -364,7 +366,7 @@ static int is_remote_log(char *base_name, struct sockaddr_in *addr)
     return 0;
 }
 
-dlog_t *dlog_init(char *base_name, int flag, size_t max_size, int log_num, int keep_time)
+dlog_t *dlog_init(const char *base_name, int flag, size_t max_size, int log_num, int keep_time)
 {
     if (base_name == NULL)
         return NULL;
@@ -720,6 +722,8 @@ int dlog_read_flag(char *str)
             flag |= DLOG_NOTICE;
         else if (strcmp(f, "debug") == 0)
             flag |= DLOG_DEBUG;
+        else if (strcmp(f, "trace") == 0)
+            flag |= DLOG_TRACE;
         else if (strcmp(f, "user1") == 0)
             flag |= DLOG_USER1;
         else if (strcmp(f, "user2") == 0)

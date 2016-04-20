@@ -78,7 +78,7 @@ typedef struct {
  *
  * fail return NULL.
  */
-dlog_t *dlog_init(char *base_name, int flag, size_t max_size, int log_num, int keep_time);
+dlog_t *dlog_init(const char *base_name, int flag, size_t max_size, int log_num, int keep_time);
 
 /* 
  * set udp socket file descriptor when use remote log.
@@ -124,6 +124,9 @@ int dlog_opened_num(void);
 extern dlog_t   *default_dlog;
 extern int       default_dlog_flag;
 
+typedef void (*dlog_on_fatal_cb)(const char *fmt, ...);
+extern dlog_on_fatal_cb dlog_on_fatal;
+
 /* read flag from string like: error, info, NOTICE  DEBUG */
 int dlog_read_flag(char *str);
 
@@ -137,8 +140,9 @@ enum {
     DLOG_INFO   = 0x8,
     DLOG_NOTICE = 0x10,
     DLOG_DEBUG  = 0x20,
-    DLOG_USER1  = 0x40,
-    DLOG_USER2  = 0x80,
+    DLOG_TRACE  = 0x40,
+    DLOG_USER1  = 0x80,
+    DLOG_USER2  = 0x100,
 };
 
 # define loga(fmt, args...) do { \
@@ -150,42 +154,51 @@ enum {
 } while (0)
 
 # define log_vip(fmt, args...) do { \
-    loga("[vip]%s:%i(%s): " fmt , __FILE__, __LINE__, __func__, ##args); \
+    loga("[vip]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
 } while (0)
 
 # define log_fatal(fmt, args...) do { \
     if (default_dlog_flag & DLOG_FATAL) { \
-        loga("[fatal]%s:%i(%s): " fmt , __FILE__, __LINE__, __func__, ##args); \
+        loga("[fatal]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
+        if (dlog_on_fatal) { \
+            dlog_on_fatal("[fatal]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
+        } \
     } \
 } while (0)
 
 # define log_error(fmt, args...) do { \
     if (default_dlog_flag & DLOG_ERROR) { \
-        loga("[error]%s:%i(%s): " fmt , __FILE__, __LINE__, __func__, ##args); \
+        loga("[error]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
     } \
 } while (0)
 
 # define log_warn(fmt, args...) do { \
     if (default_dlog_flag & DLOG_WARN) { \
-        loga("[warn]%s:%i(%s): " fmt , __FILE__, __LINE__, __func__, ##args); \
+        loga("[warn]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
     } \
 } while (0)
 
 # define log_info(fmt, args...) do { \
     if (default_dlog_flag & DLOG_INFO) { \
-        loga("[info]%s:%i(%s): " fmt , __FILE__, __LINE__, __func__, ##args); \
+        loga("[info]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
     } \
 } while (0)
 
 # define log_notice(fmt, args...) do { \
     if (default_dlog_flag & DLOG_NOTICE) { \
-        loga("[notice]%s:%i(%s): " fmt , __FILE__, __LINE__, __func__, ##args); \
+        loga("[notice]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
     } \
 } while (0)
 
 # define log_debug(fmt, args...) do { \
     if (default_dlog_flag & DLOG_DEBUG) { \
         loga("[debug]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
+    } \
+} while (0)
+
+# define log_trace(fmt, args...) do { \
+    if (default_dlog_flag & DLOG_TRACE) { \
+        loga("[trace]%s:%i(%s): " fmt, __FILE__, __LINE__, __func__, ##args); \
     } \
 } while (0)
 
