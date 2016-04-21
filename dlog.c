@@ -498,7 +498,7 @@ static char *timeval_str(struct timeval *tv)
     return str;
 }
 
-static int inner_dlog(dlog_t *log, char const *fmt, va_list ap) 
+static int inner_dlog(dlog_t *log, const char *fmt, va_list ap) 
 {
     if (!log || !fmt)
         return -1;
@@ -558,7 +558,7 @@ static int inner_dlog(dlog_t *log, char const *fmt, va_list ap)
     return 0;
 }
 
-int dlog(dlog_t *log, char const *fmt, ...)
+int dlog(dlog_t *log, const char *fmt, ...)
 {
     pthread_mutex_lock(&log->lock);
     va_list ap;
@@ -570,7 +570,13 @@ int dlog(dlog_t *log, char const *fmt, ...)
     return ret;
 }
 
-void dlog_stderr(char const *fmt, ...)
+int dlogv(dlog_t *log, const char *fmt, va_list ap)
+{
+    pthread_mutex_lock(&log->lock);
+    return inner_dlog(log, fmt, ap);
+}
+
+void dlog_stderr(const char *fmt, ...)
 {
     struct timeval now;
     gettimeofday(&now, NULL);
@@ -583,7 +589,7 @@ void dlog_stderr(char const *fmt, ...)
     fprintf(stderr, "\n");
 }
 
-void dlog_syslog(char const *fmt, ...)
+void dlog_syslog(const char *fmt, ...)
 {
     char exe_path[PATH_MAX];
     ssize_t ret = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);

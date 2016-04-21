@@ -9,6 +9,7 @@
 # define __DLOG__ 1
 
 # include <stddef.h>
+# include <stdarg.h>
 # include <pthread.h>
 # include <time.h>
 # include <sys/time.h>
@@ -87,13 +88,14 @@ dlog_t *dlog_init(const char *base_name, int flag, size_t max_size, int log_num,
 int dlog_set_sockfd(dlog_t *log, int fd);
 
 /* log a message */
-int dlog(dlog_t *log, char const *fmt, ...) __attribute__ ((format(printf, 2, 3)));
+int dlog(dlog_t *log, const char *fmt, ...) __attribute__ ((format(printf, 2, 3)));
+int dlogv(dlog_t *log, const char *fmt, va_list ap);
 
 /* log to stderr */
-void dlog_stderr(char const *fmt, ...);
+void dlog_stderr(const char *fmt, ...);
 
 /* log to syslog */
-void dlog_syslog(char const *fmt, ...);
+void dlog_syslog(const char *fmt, ...);
 
 /* log stack backtrace */
 void dlog_backtrace(dlog_t *log);
@@ -124,7 +126,7 @@ int dlog_opened_num(void);
 extern dlog_t   *default_dlog;
 extern int       default_dlog_flag;
 
-typedef void (*dlog_on_fatal_cb)(const char *fmt, ...);
+typedef int (*dlog_on_fatal_cb)(const char *fmt, ...);
 extern dlog_on_fatal_cb dlog_on_fatal;
 
 /* read flag from string like: error, info, NOTICE  DEBUG */
