@@ -50,29 +50,27 @@ static char *log_suffix(int type, time_t time, int index)
     static char str[30];
     if (type == DLOG_SHIFT_BY_SIZE) {
         if (index) {
-            snprintf(str, sizeof(str), "%d.log", index);
+            snprintf(str, sizeof(str), ".log.%d", index);
         } else {
             snprintf(str, sizeof(str), ".log");
         }
-
         return str;
     }
 
     struct tm *t = localtime(&time);
     ssize_t n = 0;
-
     switch (type)
     {
     case DLOG_SHIFT_BY_MIN:
-        n = snprintf(str, sizeof(str), "_%04d%02d%02d%02d%02d",
+        n = snprintf(str, sizeof(str), ".%04d%02d%02d%02d%02d",
                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
         break;
     case DLOG_SHIFT_BY_HOUR:
-        n = snprintf(str, sizeof(str), "_%04d%02d%02d%02d",
+        n = snprintf(str, sizeof(str), ".%04d%02d%02d%02d",
                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour);
         break;
     case DLOG_SHIFT_BY_DAY:
-        n = snprintf(str, sizeof(str), "_%04d%02d%02d",
+        n = snprintf(str, sizeof(str), ".%04d%02d%02d",
                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday);
         break;
     default:
@@ -81,7 +79,7 @@ static char *log_suffix(int type, time_t time, int index)
     }
 
     if (index) {
-        snprintf(str + n, sizeof(str) - n, "_%d.log", index);
+        snprintf(str + n, sizeof(str) - n, ".log.%d", index);
     } else {
         snprintf(str + n, sizeof(str) - n, ".log");
     }
